@@ -1,0 +1,4 @@
+pysc2
+dill
+tensorflow
+baselines # openai library of algorhytms
