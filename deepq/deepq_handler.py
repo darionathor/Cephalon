@@ -87,7 +87,7 @@ def deepq_handler(unused_argv):
           counter = COUNTER
           # Learning rate schedule
           learning_rate = FLAGS.learning_rate * (1 - 0.9 * counter / FLAGS.max_steps)
-          agent.update(replay_buffer, FLAGS.discount, learning_rate, counter)
+          agent.update(replay_buffer, FLAGS.discount, learning_rate, counter, FLAGS.batch_size)
           replay_buffer = []
           if counter % FLAGS.snapshot_step == 1:
             agent.save_model(SNAPSHOT, counter)

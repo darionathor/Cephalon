@@ -2,6 +2,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import random
+
 import numpy as np
 import tensorflow as tf
 from pysc2.lib import actions
@@ -149,11 +151,14 @@ class DeepQAgent(object):
     return actions.FunctionCall(act_id, act_args)
 
 
-  def update(self, rbs, disc, lr, cter):
+  def update(self, rbs, disc, lr, cter, batch_size):
     # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
-    obs = rbs[-1][-1]
+    # batch_index = np.random.choice(len(rbs), size = 64, replace = False)
+    # batch = [rbs[i] for i in batch_index]
+    batch = random.sample(rbs,batch_size)
+    # obs = batch[-1][-1]
     # if obs.last():
-    #  # Q = 0
+    #   Q = obs.reward
     # else:
     #   minimap = np.array(obs.observation['feature_minimap'], dtype=np.float32)
     #   minimap = np.expand_dims(U.preprocess_minimap(minimap), axis=0)
@@ -165,9 +170,11 @@ class DeepQAgent(object):
     #   feed = {self.minimap: minimap,
     #           self.screen: screen,
     #           self.info: info}
-    #   #Q = self.sess.run(self.value, feed_dict=feed)[0]
-
-    # Compute targets and masks
+    #   non_spatial_action_next_state, spatial_action_next_state = self.sess.run(
+    #     [self.non_spatial_action, self.spatial_action],
+    #     feed_dict=feed)
+    #
+    # # Compute targets and masks
     minimaps = []
     screens = []
     infos = []
@@ -176,23 +183,31 @@ class DeepQAgent(object):
     # value_target[-1] = Q
 
     #valid_spatial_action = np.zeros([len(rbs)], dtype=np.float32)
-    spatial_action_selected = np.zeros([len(rbs), self.ssize**2], dtype=np.float32)
+    spatial_action_selected = np.zeros([len(batch), self.ssize**2], dtype=np.float32)
     #valid_non_spatial_action = np.zeros([len(rbs), len(actions.FUNCTIONS)], dtype=np.float32)
-    non_spatial_action_selected = np.zeros([len(rbs), len(actions.FUNCTIONS)], dtype=np.float32)
+    non_spatial_action_selected = np.zeros([len(batch), len(actions.FUNCTIONS)], dtype=np.float32)
 
-    rbs.reverse()
+    #rbs.reverse()
     # TODO Change to random batch selection?
-    for i, [obs, action, next_obs] in enumerate(rbs):
+    for i, [obs, action, next_obs] in enumerate(batch):
       minimap = np.array(obs.observation['feature_minimap'], dtype=np.float32)
       minimap = np.expand_dims(U.preprocess_minimap(minimap), axis=0)
       screen = np.array(obs.observation['feature_screen'], dtype=np.float32)
       screen = np.expand_dims(U.preprocess_screen(screen), axis=0)
       info = np.zeros([1, self.isize], dtype=np.float32)
       info[0, obs.observation['available_actions']] = 1
-
+      feed = {self.minimap: minimap,
+                        self.screen: screen,
+                        self.info: info}
       minimaps.append(minimap)
       screens.append(screen)
       infos.append(info)
+
+      non_spatial_action_next_state, spatial_action_next_state = self.sess.run(
+        [self.non_spatial_action, self.spatial_action],
+        feed_dict=feed)
+      non_spatial_action_next_state.ravel()
+      spatial_action_next_state.ravel()
 
       reward = obs.reward
       act_id = action.function
@@ -202,14 +217,21 @@ class DeepQAgent(object):
 
       #valid_actions = obs.observation["available_actions"]
       #valid_non_spatial_action[i, valid_actions] = 1
-      non_spatial_action_selected[i, act_id] = reward + disc * non_spatial_action_selected[i-1, act_id]
+      #print(non_spatial_action_next_state)
+      if(obs.last()):
+        non_spatial_action_selected[i, act_id] = reward
+      else:
+        non_spatial_action_selected[i, act_id] = reward + disc * non_spatial_action_next_state[0, act_id]
 
       args = actions.FUNCTIONS[act_id].args
       for arg, act_arg in zip(args, act_args):
         if arg.name in ('screen', 'minimap', 'screen2'):
           ind = act_arg[1] * self.ssize + act_arg[0]
           #valid_spatial_action[i] = 1
-          spatial_action_selected[i, ind] =  reward + disc * spatial_action_selected[i-1, ind]
+          if(obs.last()):
+            spatial_action_selected[i, act_id] = reward
+          else:
+            spatial_action_selected[i, ind] =  reward + disc * spatial_action_next_state[0, ind]
 
     minimaps = np.concatenate(minimaps, axis=0)
     screens = np.concatenate(screens, axis=0)
