@@ -247,7 +247,8 @@ class DeepQAgent(object):
             #self.valid_non_spatial_action: valid_non_spatial_action,
             self.non_spatial_action_selected: non_spatial_action_selected,
             self.learning_rate: lr}
-    _, summary = self.sess.run([self.train_op, self.summary_op], feed_dict=feed)
+    _, summary, loss = self.sess.run([self.train_op, self.summary_op, self.loss], feed_dict=feed)
+    print(loss)
     self.summary_writer.add_summary(summary, cter)
 
 

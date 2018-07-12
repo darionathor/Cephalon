@@ -8,6 +8,8 @@ import time
 def run_loop(agents, env, max_frames=0):
   """A run loop to have agents and an environment interact."""
   start_time = time.time()
+  iteration = 0
+  score = 0
 
   try:
     while True:
@@ -24,6 +26,14 @@ def run_loop(agents, env, max_frames=0):
         is_done = (num_frames >= max_frames) or timesteps[0].last()
         yield [last_timesteps[0], actions[0], timesteps[0]], is_done
         if is_done:
+          iteration=iteration+1
+          score = score + last_timesteps[0].observation['score_cumulative'][0]
+          if(iteration>=100):
+            score = score/ 100.0
+            print('average score last 100 games: ')
+            print(score)
+            iteration = 0
+            score = 0
           break
   except KeyboardInterrupt:
     pass
