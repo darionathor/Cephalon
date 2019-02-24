@@ -122,9 +122,9 @@ def build_fcn(minimap, screen, info, msize, ssize, num_action):
                                               num_outputs=num_action,
                                               activation_fn=tf.nn.softmax,
                                               scope='non_spatial_action')
-  # value = tf.reshape(layers.fully_connected(feat_fc,
-  #                                           num_outputs=1,
-  #                                           activation_fn=None,
-  #                                           scope='value'), [-1])
+  value = tf.reshape(layers.fully_connected(feat_fc,
+                                            num_outputs=1,
+                                            activation_fn=None,
+                                            scope='value'), [-1])
 
-  return spatial_action, non_spatial_action#, value
+  return spatial_action, non_spatial_action, value

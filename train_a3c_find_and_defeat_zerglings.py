@@ -4,8 +4,8 @@ from absl import app
 from absl import flags
 
 FLAGS = flags.FLAGS
-flags.DEFINE_bool("training", True, "Whether to train agents.")
-flags.DEFINE_bool("continuation", False, "Continuously training.")
+flags.DEFINE_bool("training", False, "Whether to train agents.")
+flags.DEFINE_bool("continuation", True, "Continuously training.")
 flags.DEFINE_float("learning_rate", 5e-4, "Learning rate for training.")
 flags.DEFINE_float("discount", 0.99, "Discount rate for future rewards.")
 flags.DEFINE_integer("max_steps", int(1e5), "Total steps for training.")
@@ -19,7 +19,7 @@ flags.DEFINE_bool("render", True, "Whether to render with pygame.")
 flags.DEFINE_integer("screen_resolution", 16, "Resolution for screen feature layers.")
 flags.DEFINE_integer("minimap_resolution", 16, "Resolution for minimap feature layers.")
 flags.DEFINE_integer("camera_width", 20, "Camera width in world units.")
-flags.DEFINE_integer("step_mul", 8, "Game steps per agent step.")
+flags.DEFINE_integer("step_mul", 16, "Game steps per agent step.")
 
 flags.DEFINE_string("agent", "a3c.a3c.A3CAgent", "Which agent to run.")
 flags.DEFINE_string("net", "fcn", "atari or fcn.")

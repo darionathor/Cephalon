@@ -23,6 +23,7 @@ class DeepQAgent(object):
     self.msize = msize
     self.ssize = ssize
     self.isize = len(actions.FUNCTIONS)
+    self.iter = 0
 
 
   def setup(self, sess, summary_writer):
@@ -39,8 +40,37 @@ class DeepQAgent(object):
     # Epsilon schedule
     self.epsilon = [0.05, 0.2]
 
+  def copy_model_parameters(self):
+    """
+    Copies the model parameters of one estimator to another.
+
+    Args:
+      sess: Tensorflow session instance
+      estimator1: Estimator to copy the paramters from
+      estimator2: Estimator to copy the parameters to
+    """
+    e1_params = [t for t in tf.trainable_variables() if t.name.startswith(self.name)]
+    e1_params = sorted(e1_params, key=lambda v: v.name)
+    e2_params = [t for t in tf.trainable_variables() if t.name.startswith('evaluator')]
+    e2_params = sorted(e2_params, key=lambda v: v.name)
+
+    update_ops = []
+    for e1_v, e2_v in zip(e1_params, e2_params):
+      op = e2_v.assign(e1_v)
+      update_ops.append(op)
+
+    self.sess.run(update_ops)
 
   def build_model(self, reuse, dev, ntype):
+    with tf.variable_scope('evaluator') and tf.device(dev):
+      self.minimapQ = tf.placeholder(tf.float32, [None, U.minimap_channel(), self.msize, self.msize], name='minimap')
+      self.screenQ = tf.placeholder(tf.float32, [None, U.screen_channel(), self.ssize, self.ssize], name='screen')
+      self.infoQ = tf.placeholder(tf.float32, [None, self.isize], name='info')
+
+      # Build networks
+      net = build_net(self.minimapQ, self.screenQ, self.infoQ, self.msize, self.ssize, len(actions.FUNCTIONS), ntype)
+      # self.spatial_action, self.non_spatial_action, self.value = net
+      self.spatial_Q, self.non_spatial_Q = net
     with tf.variable_scope(self.name) and tf.device(dev):
       if reuse:
         tf.get_variable_scope().reuse_variables()
@@ -54,14 +84,14 @@ class DeepQAgent(object):
       # Build networks
       net = build_net(self.minimap, self.screen, self.info, self.msize, self.ssize, len(actions.FUNCTIONS), ntype)
       #self.spatial_action, self.non_spatial_action, self.value = net
-      self.spatial_action, self.non_spatial_action = net
+      self.spatial_action, self.non_spatial_action, self.q_value = net
 
       # Set targets and masks
       #self.valid_spatial_action = tf.placeholder(tf.float32, [None], name='valid_spatial_action')
-      self.spatial_action_selected = tf.placeholder(tf.float32, [None, self.ssize**2], name='spatial_action_selected')
+      #self.spatial_action_selected = tf.placeholder(tf.float32, [None, self.ssize**2], name='spatial_action_selected')
       #self.valid_non_spatial_action = tf.placeholder(tf.float32, [None, len(actions.FUNCTIONS)], name='valid_non_spatial_action')
-      self.non_spatial_action_selected = tf.placeholder(tf.float32, [None, len(actions.FUNCTIONS)], name='non_spatial_action_selected')
-      # self.value_target = tf.placeholder(tf.float32, [None], name='value_target')
+      #self.non_spatial_action_selected = tf.placeholder(tf.float32, [None, len(actions.FUNCTIONS)], name='non_spatial_action_selected')
+      self.value_target = tf.placeholder(tf.float32, [None], name='value_target')
 
       # Compute log probability
       #spatial_action_prob = tf.reduce_sum(self.spatial_action * self.spatial_action_selected, axis=1)
@@ -84,10 +114,10 @@ class DeepQAgent(object):
 
 
       # TODO: policy penalty
-      #loss = value_loss + policy_loss
-      self.q_spatial = tf.reduce_mean(tf.square(self.spatial_action_selected - self.spatial_action));
-      self.q_non_spatial = tf.reduce_mean(tf.square(self.non_spatial_action_selected - self.non_spatial_action));
-      self.loss = self.q_spatial + self.q_non_spatial;
+      #loss = value_loss + C:\Users\sasal\PycharmProjects\sc2_cephalon_loss
+      #self.q_spatial = tf.reduce_mean(tf.square(self.spatial_action_selected - self.spatial_action));
+      #self.q_non_spatial = tf.reduce_mean(tf.square(self.non_spatial_action_selected - self.non_spatial_action));
+      self.loss = tf.reduce_mean(tf.squared_difference(self.value_target,  self.q_value));
       self.summary.append(tf.summary.scalar('value_loss', self.loss))
       # Build the optimizer
       self.learning_rate = tf.placeholder(tf.float32, None, name='learning_rate')
@@ -152,10 +182,15 @@ class DeepQAgent(object):
 
 
   def update(self, rbs, disc, lr, cter, batch_size):
+    if(self.iter % 100 == 0):
+      self.copy_model_parameters()
     # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
     # batch_index = np.random.choice(len(rbs), size = 64, replace = False)
     # batch = [rbs[i] for i in batch_index]
-    batch = random.sample(rbs,batch_size)
+    if(len(rbs)<batch_size):
+      batch = rbs
+    else:
+      batch = random.sample(rbs,batch_size)
     # obs = batch[-1][-1]
     # if obs.last():
     #   Q = obs.reward
@@ -179,13 +214,14 @@ class DeepQAgent(object):
     screens = []
     infos = []
 
-    # value_target = np.zeros([len(rbs)], dtype=np.float32)
+    value_target = np.zeros([len(batch)], dtype=np.float32)
+    non_spatial_value_target = np.zeros([len(batch)], dtype=np.float32)
     # value_target[-1] = Q
 
     #valid_spatial_action = np.zeros([len(rbs)], dtype=np.float32)
-    spatial_action_selected = np.zeros([len(batch), self.ssize**2], dtype=np.float32)
+    #spatial_action_selected = np.zeros([len(batch), self.ssize**2], dtype=np.float32)
     #valid_non_spatial_action = np.zeros([len(rbs), len(actions.FUNCTIONS)], dtype=np.float32)
-    non_spatial_action_selected = np.zeros([len(batch), len(actions.FUNCTIONS)], dtype=np.float32)
+   # non_spatial_action_selected = np.zeros([len(batch), len(actions.FUNCTIONS)], dtype=np.float32)
 
     #rbs.reverse()
     # TODO Change to random batch selection?
@@ -204,24 +240,26 @@ class DeepQAgent(object):
       infos.append(info)
 
       non_spatial_action_next_state, spatial_action_next_state = self.sess.run(
-        [self.non_spatial_action, self.spatial_action],
+        [self.non_spatial_Q, self.spatial_Q],
         feed_dict=feed)
-      non_spatial_action_next_state.ravel()
-      spatial_action_next_state.ravel()
+     # non_spatial_action_next_state.ravel()
+     # spatial_action_next_state.ravel()
+      #q_value_next_state.ravel()
 
       reward = obs.reward
       act_id = action.function
       act_args = action.arguments
 
-      #value_target[i] = reward + disc * value_target[i-1]
 
       #valid_actions = obs.observation["available_actions"]
       #valid_non_spatial_action[i, valid_actions] = 1
       #print(non_spatial_action_next_state)
       if(obs.last()):
-        non_spatial_action_selected[i, act_id] = reward
+       # non_spatial_action_selected[i, act_id] = 1
+        value_target[i] = reward
       else:
-        non_spatial_action_selected[i, act_id] = reward + disc * non_spatial_action_next_state[0, act_id]
+       # non_spatial_action_selected[i, act_id] = 1
+        value_target[i] = reward + disc * np.max(spatial_action_next_state[0])
 
       args = actions.FUNCTIONS[act_id].args
       for arg, act_arg in zip(args, act_args):
@@ -229,9 +267,9 @@ class DeepQAgent(object):
           ind = act_arg[1] * self.ssize + act_arg[0]
           #valid_spatial_action[i] = 1
           if(obs.last()):
-            spatial_action_selected[i, act_id] = reward
+              non_spatial_value_target[i] = reward
           else:
-            spatial_action_selected[i, ind] =  reward + disc * spatial_action_next_state[0, ind]
+              non_spatial_value_target[i] =  reward + disc * np.max(non_spatial_action_next_state[0])
 
     minimaps = np.concatenate(minimaps, axis=0)
     screens = np.concatenate(screens, axis=0)
@@ -241,15 +279,17 @@ class DeepQAgent(object):
     feed = {self.minimap: minimaps,
             self.screen: screens,
             self.info: infos,
-            #self.value_target: value_target,
+            self.value_target: value_target,
+            self.non_spatial_value_target: non_spatial_value_target,
             #self.valid_spatial_action: valid_spatial_action,
-            self.spatial_action_selected: spatial_action_selected,
+            #self.spatial_action_selected: spatial_action_selected,
             #self.valid_non_spatial_action: valid_non_spatial_action,
-            self.non_spatial_action_selected: non_spatial_action_selected,
+            #self.non_spatial_action_selected: non_spatial_action_selected,
             self.learning_rate: lr}
     _, summary, loss = self.sess.run([self.train_op, self.summary_op, self.loss], feed_dict=feed)
     print(loss)
     self.summary_writer.add_summary(summary, cter)
+    self.iter = self.iter+1
 
 
   def save_model(self, path, count):
